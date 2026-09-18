@@ -17,8 +17,6 @@ export const shared = StyleSheet.create({
   white: { color: '#f5f5f5' },
 });
 
-// Sample a smoothstep curve on the native animation timeline. Each movement eases
-// independently; a linear master clock must not make the logo move linearly.
 export function smooth(p: Animated.Value, start: number, end: number, from: number, to: number) {
   const inputRange: number[] = [];
   const outputRange: number[] = [];
@@ -30,7 +28,6 @@ export function smooth(p: Animated.Value, start: number, end: number, from: numb
   return tween(p, inputRange, outputRange);
 }
 
-// Cubic ease-out: immediate movement, then a progressively softer landing.
 export function easeOut(p: Animated.Value, start: number, end: number, from: number, to: number) {
   return tween(p,
     Array.from({ length: 25 }, (_, i) => start + (end - start) * i / 24),

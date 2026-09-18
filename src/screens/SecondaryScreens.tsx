@@ -3,11 +3,9 @@ import React, { useState } from "react";
 import {
   Pressable,
   StyleSheet,
-  Switch,
   Text,
   View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "../components/Screen";
 import {
   ActionButton,
@@ -386,8 +384,7 @@ export function AlertsScreen() {
       ))}
       <Card>
         <Text style={styles.small}>
-          Push delivery is prepared behind NotificationService. Configure a
-          provider when the backend is available.
+          Las notificaciones del sistema todavía no están habilitadas.
         </Text>
       </Card>
     </Screen>
@@ -395,32 +392,7 @@ export function AlertsScreen() {
 }
 export function RemoteControlScreen() {
   const { sendCommand } = useMonitoring();
-  const action = (command: RemoteCommand) =>
-    NativeAlert.alert(
-      command.destructive ? "Confirm sensitive action" : "Send remote command?",
-      `Are you sure you want to ${command.label.toLowerCase()}? This app only sends a request to the authorized monitoring API.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text:
-            command.action === "shutdown"
-              ? "Shutdown"
-              : command.action === "restart"
-                ? "Restart"
-                : "Continue",
-          style: command.destructive ? "destructive" : "default",
-          onPress: () =>
-            void sendCommand(command)
-              .then((message) => NativeAlert.alert("Command queued", message))
-              .catch(() =>
-                NativeAlert.alert(
-                  "Command failed",
-                  "Unable to reach the monitoring API.",
-                ),
-              ),
-        },
-      ],
-    );
+  const action = (command: RemoteCommand) => commandPrompt(command, sendCommand);
   return (
     <Screen>
       <PageHeader eyebrow="AUTHORIZED COMMANDS" title="Remote Control" />

@@ -24,8 +24,6 @@ function relativeParts(value) {
   return parts;
 }
 
-// Open each component relative to an anchored directory descriptor. No symlink
-// traversal, shell interpolation, or escapes into a different mounted device.
 async function withEntry(root, relative, directory, operation) {
   const parts = relativeParts(relative);
   let handle;
@@ -70,7 +68,7 @@ function createStorageService({ roots = [], devices = readDevices } = {}) {
                 totalBytes = stats.blocks * stats.bsize;
                 usedBytes = (stats.blocks - stats.bfree) * stats.bsize;
                 freeBytes = stats.bavail * stats.bsize;
-                // Do not allow a configured symlink to change the browsing root.
+
                 browsable = allowed.has(path.resolve(mount)) && await fs.realpath(mount) === path.resolve(mount);
                 if (browsable) locations.set(volumeId, mount);
               } catch { reason = 'No se pudo consultar el volumen; comprueba que siga montado y sus permisos.'; }

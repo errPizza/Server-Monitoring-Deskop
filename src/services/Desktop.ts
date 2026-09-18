@@ -11,7 +11,7 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
   const result = await desktop.request(url, { method: options.method, headers: Object.fromEntries(new Headers(options.headers).entries()), body: options.body as string | undefined });
   return new Response(result.body || null, { status: result.status });
 }
-// Browser preview keeps secrets in memory; the installed app uses the OS keyring.
+
 const memory = new Map<string, string>();
 export const secureStore = {
   getItemAsync: async (key: string) => desktop ? desktop.store('get', key) : memory.get(key) ?? null,

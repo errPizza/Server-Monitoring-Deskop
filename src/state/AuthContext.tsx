@@ -37,7 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setState("unauthenticated");
     }
   }, []);
-  // Startup is triggered by the final intro scene, while its real status is visible.
+
   const login = useCallback(async (email: string, password: string) => {
     setError(undefined);
     try {
@@ -56,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
   const logout = useCallback(async () => {
-    // DEVELOPMENT ONLY: keep the temporary offline session independent of the RPi.
+
     if (environment.bypassAuth) { setState("authenticated"); return; }
     await authService.logout();
     setPendingDevice(undefined);

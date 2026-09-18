@@ -62,13 +62,9 @@ function Capacity({ label, value, detail, color }: { label: string; value: numbe
   return <View style={{ gap: 10, marginTop: 25 }}><View style={styles.serviceTitle}><Text style={[styles.label, { flex: 1 }]}>{label}</Text><Text style={styles.label}>{value === null ? 'N/A' : `${value}%`}</Text></View><DotCapacity value={value} color={color} label={label} /><Text style={styles.caption}>{detail}</Text></View>;
 }
 const styles = StyleSheet.create({
-  subtitle: { color: colors.muted, fontSize: 13, marginTop: -9 },
-  serverStrip: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 9 },
-  serverIdentity: { flexDirection: 'row', alignItems: 'center', gap: 13 }, serverIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: '#a8d8b00c', borderWidth: 1, borderColor: '#a8d8b023', alignItems: 'center', justifyContent: 'center' },
-  serverName: { color: colors.text, fontSize: 15, fontWeight: '600', marginBottom: 5 }, caption: { color: colors.muted, fontSize: 11, lineHeight: 17 }, uptime: { color: colors.text, fontSize: 13, marginTop: 3, textAlign: 'right' },
+  subtitle: { color: colors.muted, fontSize: 13, marginTop: -9 }, caption: { color: colors.muted, fontSize: 11, lineHeight: 17 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 }, columns: { flexDirection: 'row', gap: 18, alignItems: 'stretch' },
   chartSummary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: 22 }, large: { color: colors.text, fontSize: 30, letterSpacing: -1, fontWeight: '500' }, unit: { fontSize: 12, color: colors.muted, letterSpacing: 0 },
   service: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10, paddingTop: 26, paddingBottom: 8 }, serviceTitle: { flexDirection: 'row', alignItems: 'center', gap: 10 }, label: { color: colors.text, fontSize: 13, fontWeight: '500' }, divider: { borderTopWidth: 1, borderTopColor: colors.border, marginTop: 19, paddingTop: 19 },
-  event: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 17 }, eventBorder: { borderTopWidth: 1, borderTopColor: colors.border }, eventIcon: { width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center' }, eventTitle: { color: colors.text, fontSize: 12, fontWeight: '500', marginBottom: 4 }, eventTime: { color: colors.subtle, fontSize: 10, maxWidth: 100, textAlign: 'right' },
-  track: { height: 4, backgroundColor: colors.surfaceRaised, borderRadius: 8, overflow: 'hidden' }, footer: { color: colors.subtle, fontSize: 10, textAlign: 'center', paddingVertical: 8 },
+  event: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 17 }, eventBorder: { borderTopWidth: 1, borderTopColor: colors.border }, eventIcon: { width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center' }, eventTitle: { color: colors.text, fontSize: 12, fontWeight: '500', marginBottom: 4 }, eventTime: { color: colors.subtle, fontSize: 10, maxWidth: 100, textAlign: 'right' }, footer: { color: colors.subtle, fontSize: 10, textAlign: 'center', paddingVertical: 8 },
 });

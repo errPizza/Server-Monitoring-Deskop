@@ -1,12 +1,5 @@
 "use strict";
 
-/**
- * Local monitoring API for Pi Command Center.
- *
- * It is deliberately self-contained: it can run on a development host or be
- * deployed beside a future collector. Commands are audited and queued, never
- * executed by default. See README before enabling a production command runner.
- */
 const http = require("node:http");
 const os = require("node:os");
 const crypto = require("node:crypto");
@@ -62,7 +55,7 @@ const server = http.createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
   const path = url.pathname.replace(/^\/api/, "") || "/";
   if (path === "/health" && request.method === "GET") return json(response, 200, { status: "ok", uptime: formatDuration(Date.now() - startedAt), commandExecution: "disabled" });
-  // File browsing is never exposed by the unauthenticated development API.
+
   if (path.startsWith('/mobile/storage/')) {
     if (!API_KEY) return json(response, 503, { error: 'Configura autenticación antes de habilitar Storage.' });
     if (!requireAuth(request, response)) return;

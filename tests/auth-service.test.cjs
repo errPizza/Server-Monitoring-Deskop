@@ -12,7 +12,7 @@ test('login and refresh match the mobile server JSON parser contract',async()=>{
     if(id==='../config/environment')return {environment:{apiBaseUrl:'https://example.invalid/api',requestTimeoutMs:1000}};
     throw Error(id);
   },fetch:async(url,options)=>{
-    // Fastify's production JSON parser puts the posted object in body.data.
+
     const request={body:{data:JSON.parse(options.body)}};
     requests.push(request.body.data);
     if(url.endsWith('/login')){

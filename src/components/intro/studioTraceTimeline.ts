@@ -18,8 +18,7 @@ function route(a:Point,b:Point){
  const after={x:a.x+Math.sign(b.x-a.x)*radius,y:b.y};
  return [a,...Array.from({length:9},(_,i)=>{const t=i/8;return {x:(1-t)**2*before.x+2*(1-t)*t*corner.x+t*t*after.x,y:(1-t)**2*before.y+2*(1-t)*t*corner.y+t*t*after.y};}),b];
 }
-// All 56 paths come from skeletons of the source bitmap, including filled areas.
-// Nearest target matching gives neighboring features coherent travel directions.
+
 const available=contours.tracks.map((source,index)=>({source,index}));
 const assignments:Record<number,number>={};
 for(let i=0;i<contours.tracks.length;i++){

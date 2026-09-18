@@ -37,7 +37,6 @@ const alertLevel = (value: unknown): Alert["level"] =>
     FATAL: "critical",
   })[String(value).toUpperCase()] ?? "info") as Alert["level"];
 
-/** Adapter for the authenticated /api/mobile contract in Discord-RobloxPurchsAlerts. */
 export class HttpMonitoringService implements MonitoringService {
   private async request<T>(
     path: string,

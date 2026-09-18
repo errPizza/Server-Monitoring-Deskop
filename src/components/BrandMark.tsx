@@ -3,7 +3,6 @@ import { StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, radius } from "../theme";
 
-/** Original app mark: a server rack framed by a live signal. */
 export function BrandMark({ compact = false }: { compact?: boolean }) {
   return (
     <View style={[styles.wrap, compact && styles.compact]}>

@@ -1,4 +1,4 @@
-import { Alert, DashboardData, DockerContainer, ErrorStatistics, LogEntry, RequestStatistics } from '../../models';
+import { Alert, DashboardData, ErrorStatistics, LogEntry, RequestStatistics } from '../../models';
 
 const now = new Date();
 const chart = (base: number, spread: number, count = 20) => Array.from({ length: count }, (_, i) => Math.max(1, Math.round(base + Math.sin(i * 0.72) * spread + ((i * 13) % 9))));

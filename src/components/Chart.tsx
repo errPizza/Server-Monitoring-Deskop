@@ -1,7 +1,6 @@
 import React, { useId, useMemo, useState } from 'react';
 import { colors } from '../theme';
 
-/** One SVG per chart; pointer movement only updates the active marker. */
 export function MiniChart({ data, color = colors.blue, height = 78, labels }: { data: number[]; color?: string; height?: number; labels?: [string, string] }) {
   const id = useId().replace(/:/g, '');
   const [active, setActive] = useState<number | null>(null);

@@ -6,7 +6,6 @@ import { Screen } from "../components/Screen";
 import {
   Card,
   PageHeader,
-  SectionTitle,
   StateView,
 } from "../components/Primitives";
 import { LogLevel } from "../models";

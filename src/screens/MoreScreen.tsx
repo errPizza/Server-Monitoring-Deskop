@@ -1,5 +1,5 @@
 import { useMonitoring } from "../state/MonitoringContext";
-import React, { useState } from "react";
+import React from "react";
 import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "../components/Screen";
@@ -14,9 +14,6 @@ import { useAuth } from "../state/AuthContext";
 
 export function SettingsScreen() {
   const { logout } = useAuth();
-  const [critical, setCritical] = useState(true);
-  const [warnings, setWarnings] = useState(true);
-  const [errors, setErrors] = useState(true);
   const { autoRefresh, setAutoRefresh } = useMonitoring();
   return (
     <Screen>

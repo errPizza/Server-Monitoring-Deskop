@@ -8,7 +8,6 @@ import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from './src/state/AuthContext';
 import { MonitoringProvider, useMonitoring } from './src/state/MonitoringContext';
 
-
 function AppContent() {
   const [introComplete, setIntroComplete] = useState(false);
   const { state, retrySession } = useAuth();

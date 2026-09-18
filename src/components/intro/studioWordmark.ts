@@ -1,8 +1,7 @@
 export type Point = { x: number; y: number };
 export const points = (...v: number[]): Point[] => Array.from({length:v.length/2},(_,i)=>({x:v[i*2],y:v[i*2+1]}));
 const polygon=(...v:number[])=>points(...v).map((p,i)=>`${i?'L':'M'}${p.x} ${p.y}`).join(' ')+' Z';
-// Custom filled, chamfered letterforms adapted to the supplied brand reference.
-// Red A counters and the square in MORE's O are separate brand accents.
+
 const glyphs:Record<string,{w:number;d:string;spine:Point[]}>={
  A:{w:34,d:polygon(0,36,13,0,21,0,34,36,24,36,17,16,10,36),spine:points(5,36,17,4,29,36)},
  N:{w:34,d:polygon(0,36,0,0,10,0,24,21,24,0,34,0,34,36,24,36,10,15,10,36),spine:points(5,36,5,5,29,31,29,0)},
@@ -24,5 +23,5 @@ export const wordmarkLetters=['ANOTHER','GAME MORE'].flatMap((word,row)=>{
    spine:glyphs[c].spine.map(p=>({x:p.x+left,y:p.y+row*43-52}))}];
  });
 });
-// Letter trajectories plus the two rules and the spaced STUDIO reveal.
+
 export const wordmarkTargets=[...wordmarkLetters.map(g=>g.spine),points(-126,51,-72,51),points(72,51,126,51),points(-67,51,67,51)];

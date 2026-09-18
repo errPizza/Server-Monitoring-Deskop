@@ -64,7 +64,7 @@ async function authRequest<T>(path: string, body: object): Promise<T> {
     signal: controller.signal,
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    // The server parser wraps the JSON once as request.body.data.
+
     body: JSON.stringify(body),
   });
   const payload = await response.json().catch(() => ({}));

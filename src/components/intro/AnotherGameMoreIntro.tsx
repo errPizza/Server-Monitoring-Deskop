@@ -27,8 +27,7 @@ function EmblemToWordmark({progress,reducedMotion}:SceneProps){
     })}
    </Mask>)}
   </Defs>
-  {/* Opacity stays at 1 after entrance. The original disappears only where a
-      contour's tail has passed; the source geometry is sampled from this PNG. */}
+
   {sourceVisible&&<SvgImage testID="studio-original-logo" href={introAssets.studio} x={-120} y={-120} width={240} height={240} mask="url(#remaining-emblem)"/>}
   {studioTraces.map((trace,i)=>{
    const f=frames[i];const from=Math.max(trace.sourceLength,f.tail);const to=Math.min(trace.targetStart,f.head);

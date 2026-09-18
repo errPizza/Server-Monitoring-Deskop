@@ -5,7 +5,6 @@ export interface SessionDependencies {
   refresh: () => Promise<boolean>;
 }
 
-// DEVELOPMENT ONLY: bypass must short-circuit before storage or network access.
 export async function restoreStartupSession(deps: SessionDependencies): Promise<boolean> {
   if (deps.bypass || deps.mock) return true;
   if (!await deps.loadToken()) return false;

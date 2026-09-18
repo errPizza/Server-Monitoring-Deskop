@@ -4,9 +4,7 @@ import { introAssets, SceneProps, shared, smooth, easeOut, tween, useIntroSize }
 
 export function PizzaDevIntro({ progress: p, reducedMotion: reduced }: SceneProps) {
   const s = useIntroSize();
-  // The moving clipping boundary is the logo's right edge. The text has its own
-  // counter-translation inside it, so letters emerge from behind the opaque logo.
-  // Final logo bounds end at x=163; text starts at x=180 (17px safe gap).
+
   const logoX = reduced ? -83 * s : easeOut(p, .21, .405, 0, -83 * s);
   const edgeX = reduced ? 0 : easeOut(p, .21, .405, 155 * s, 0);
   const textX = reduced ? 0 : easeOut(p, .21, .405, -220 * s, 0);
