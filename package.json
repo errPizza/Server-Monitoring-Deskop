@@ -1,0 +1,74 @@
+{
+  "name": "agm-server-monitoring-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "main": "expo/AppEntry",
+  "scripts": {
+    "start": "npm run build:web && electron desktop/main.cjs",
+    "web": "expo start --web",
+    "build:web": "expo export --platform web",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.cjs",
+    "api": "node backend/server.js",
+    "pack": "npm run build:web && electron-builder --dir",
+    "dist:win": "npm run build:web && electron-builder --win nsis",
+    "dist:linux": "npm run build:web && electron-builder --linux AppImage",
+    "dist:mac": "npm run build:web && electron-builder --mac dmg"
+  },
+  "devDependencies": {
+    "@types/react": "~18.3.12",
+    "typescript": "^5.3.3",
+    "electron": "^41.0.0",
+    "electron-builder": "^26.0.12",
+    "@expo/metro-runtime": "~4.0.1",
+    "@expo/vector-icons": "~14.0.4",
+    "@react-navigation/native": "^7.0.14",
+    "@react-navigation/native-stack": "^7.2.0",
+    "expo": "^52.0.0",
+    "expo-asset": "~11.0.5",
+    "expo-clipboard": "~7.0.1",
+    "expo-font": "~13.0.4",
+    "expo-navigation-bar": "~4.0.9",
+    "expo-secure-store": "~14.0.1",
+    "expo-status-bar": "~2.0.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-native": "0.76.9",
+    "react-native-safe-area-context": "4.12.0",
+    "react-native-screens": "~4.4.0",
+    "react-native-svg": "15.8.0",
+    "react-native-web": "~0.19.13"
+  },
+  "description": "AGM Server Monitoring para escritorio",
+  "author": "errPizza",
+  "build": {
+    "appId": "com.agm.servermonitor.desktop",
+    "productName": "AGM Server Monitoring",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "desktop/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "System"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.utilities"
+    },
+    "extraMetadata": {
+      "main": "desktop/main.cjs"
+    }
+  }
+}

@@ -1,0 +1,407 @@
+diff --git a/.env.example b/.env.example
+index 6eb1851..c16f403 100644
+--- a/.env.example
++++ b/.env.example
+@@ -46,3 +46,7 @@ ALERT_CPU_PERCENT=0
+ ALERT_RAM_PERCENT=0
+ ALERT_TEMPERATURE_C=0
+ ALERT_DISK_PERCENT=0
++
++# Storage: mounted paths visible to the API; [] disables file browsing.
++# For existing Docker mappings: STORAGE_ROOTS=["/app/data","/app/backups"]
++STORAGE_ROOTS=[]
+diff --git a/Dockerfile b/Dockerfile
+index b676b6b..2e6f6a6 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -9,6 +9,7 @@ FROM node:22-bookworm-slim AS runtime
+ WORKDIR /app
+ ENV NODE_ENV=production
+ COPY package.json package-lock.json ./
++RUN apt-get update && apt-get install -y --no-install-recommends util-linux && rm -rf /var/lib/apt/lists/*
+ RUN npm ci --omit=dev
+ COPY server/ ./server/
+ COPY --from=frontend-build /build/dist ./frontend/dist/
+diff --git a/README.md b/README.md
+index e137548..664f7d9 100644
+--- a/README.md
++++ b/README.md
+@@ -694,3 +694,12 @@ docker compose logs --tail=100 app
+ curl -f http://127.0.0.1:8787/health
+ curl -f http://127.0.0.1:8787/ready
+ ```
++
++
++## Storage móvil (solo lectura)
++
++Las sesiones móviles aprobadas de admin/owner pueden consultar `/api/mobile/storage/disks`, `/api/mobile/storage/directory?volume=ID&path=RUTA&offset=0` y `/api/mobile/storage/file?volume=ID&path=RUTA`. Se aplica `STORAGE_READ`, límite de 90 peticiones por minuto/usuario y auditoría de lectura de archivos.
++
++Configura `STORAGE_ROOTS` como array JSON de puntos de montaje autorizados. En Docker, los volúmenes existentes se ven como `/app/data` y `/app/backups`, por ejemplo `STORAGE_ROOTS=["/app/data","/app/backups"]`. Por defecto `[]` permite listar discos pero deshabilita la exploración. Otros discos necesitan un bind mount (preferiblemente de solo lectura) y permisos de lectura para el usuario `node`. La imagen incluye `util-linux` para consultar `lsblk`; solo se pueden explorar volúmenes visibles en el contenedor.
++
++La API muestra capacidad del dispositivo y uso real del volumen mediante `statfs`. Pagina 200 entradas. Previsualiza UTF-8 hasta 256 KiB y PNG/JPEG/WebP hasta 2 MiB; otros archivos solo muestran metadatos. Rechaza rutas absolutas, `..`, enlaces simbólicos, archivos especiales y cruces a otro dispositivo. No hay operaciones de escritura ni ejecución. Pruebas: `npm test`.
+diff --git a/server/config.js b/server/config.js
+index 96d0f94..73d1fc4 100644
+--- a/server/config.js
++++ b/server/config.js
+@@ -62,6 +62,7 @@ export function loadConfig(env = process.env) {
+     dockerEnabled: boolean(env.DOCKER_ENABLED),
+     dockerSocketPath: env.DOCKER_SOCKET_PATH || "/var/run/docker.sock",
+     dockerAllowedContainers: new Set(String(env.DOCKER_ALLOWED_CONTAINERS || "").split(",").map((item) => item.trim()).filter(Boolean)),
++    storageRoots: JSON.parse(env.STORAGE_ROOTS || "[]"),
+     nginxEnabled: boolean(env.NGINX_ENABLED),
+     hostControlEnabled: boolean(env.HOST_CONTROL_ENABLED),
+     hostControlSocket: env.HOST_CONTROL_SOCKET || "/run/agm-host-control.sock",
+diff --git a/server/index.js b/server/index.js
+index b7b655d..4381b35 100644
+--- a/server/index.js
++++ b/server/index.js
+@@ -104,6 +104,7 @@ export async function buildApp(options = {}) {
+   const audit = createAuditService(db);
+   const services = {
+     config, db, audit,
++    storage: options.storage,
+     limiter: new LocalRateLimiter(),
+     auth: createAuthService({ db, config }),
+     stats: createStatsService(db),
+diff --git a/server/routes/mobile.js b/server/routes/mobile.js
+index 770b86a..a38ce70 100644
+--- a/server/routes/mobile.js
++++ b/server/routes/mobile.js
+@@ -1,3 +1,4 @@
++import { createStorageService, storageError } from "../services/storage.cjs";
+ import crypto from "node:crypto";
+ import path from "node:path";
+ import { clientAddress, normalizedEmail, requireRateLimit } from "../services/security.js";
+@@ -21,6 +22,7 @@ function device(body) {
+ 
+ export function registerMobileRoutes(app, services) {
+   const { db, auth, config, limiter, audit, docker, hostControl } = services;
++  const storage = services.storage || createStorageService({ roots: config.storageRoots });
+   const insertRefresh = db.prepare("INSERT INTO mobile_refresh_tokens (token_hash, mobile_session_id, expires_at) VALUES (?, ?, ?)");
+   const bySession = db.prepare(`SELECT ms.*, u.id AS user_id, u.email, u.role, u.display_name FROM mobile_sessions ms JOIN users u ON u.id = ms.user_id WHERE ms.id = ?`);
+ 
+@@ -128,6 +130,24 @@ export function registerMobileRoutes(app, services) {
+     return { success: true };
+   });
+ 
++  for (const resource of ["disks", "directory", "file"]) app.get(`/api/mobile/storage/${resource}`, async (request, reply) => {
++    const identity = permission(request, reply, PERMISSIONS.STORAGE_READ); if (!identity) return;
++    if (!requireRateLimit(reply, limiter, "storage-read", request, 90, 60_000, identity.user.id)) return;
++    try {
++      const volume = request.query?.volume;
++      const relative = request.query?.path || "";
++      const result = resource === "disks" ? await storage.disks()
++        : resource === "directory" ? await storage.directory(volume, relative, Number(request.query?.offset || 0))
++        : await storage.file(volume, relative);
++      if (resource === "file") audit.record({ userId: identity.user.id, mobileSessionId: identity.session.id, deviceName: identity.session.device_name, action: "storage_file_read", target: String(volume || ""), result: "success" });
++      return result;
++    } catch (error) {
++      const result = storageError(error);
++      audit.record({ userId: identity.user.id, mobileSessionId: identity.session.id, action: "storage_read", target: resource, result: result.status === 403 ? "denied" : "failure" });
++      return reply.code(result.status).send({ error: result.error });
++    }
++  });
++
+   app.get("/api/mobile/system", async (request, reply) => {
+     if (!permission(request, reply, PERMISSIONS.MONITOR_READ)) return;
+     return systemSnapshot(path.dirname(config.databasePath));
+diff --git a/server/services/permissions.js b/server/services/permissions.js
+index fcc2a1c..ae31c7a 100644
+--- a/server/services/permissions.js
++++ b/server/services/permissions.js
+@@ -1,5 +1,6 @@
+ export const PERMISSIONS = Object.freeze({
+   MONITOR_READ: "MONITOR_READ",
++  STORAGE_READ: "STORAGE_READ",
+   LOGS_READ: "LOGS_READ",
+   DOCKER_READ: "DOCKER_READ",
+   NGINX_READ: "NGINX_READ",
+@@ -11,7 +12,7 @@ export const PERMISSIONS = Object.freeze({
+   SERVER_CONTROL: "SERVER_CONTROL",
+ });
+ 
+-const READ_PERMISSIONS = [PERMISSIONS.MONITOR_READ, PERMISSIONS.LOGS_READ, PERMISSIONS.DOCKER_READ, PERMISSIONS.NGINX_READ, PERMISSIONS.STATS_READ, PERMISSIONS.ALERTS_READ];
++const READ_PERMISSIONS = [PERMISSIONS.STORAGE_READ, PERMISSIONS.MONITOR_READ, PERMISSIONS.LOGS_READ, PERMISSIONS.DOCKER_READ, PERMISSIONS.NGINX_READ, PERMISSIONS.STATS_READ, PERMISSIONS.ALERTS_READ];
+ const ALL_PERMISSIONS = Object.values(PERMISSIONS);
+ 
+ export function permissionsForRole(role) {
+diff --git a/server/services/storage.cjs b/server/services/storage.cjs
+new file mode 100644
+index 0000000..4158e84
+--- /dev/null
++++ b/server/services/storage.cjs
+@@ -0,0 +1,140 @@
++'use strict';
++const fs = require('node:fs/promises');
++const { constants } = require('node:fs');
++const path = require('node:path');
++const { execFile } = require('node:child_process');
++const { promisify } = require('node:util');
++const { createHash } = require('node:crypto');
++const exec = promisify(execFile);
++const fail = (status, message) => Object.assign(new Error(message), { status });
++const id = value => createHash('sha256').update(value).digest('hex').slice(0, 24);
++const PAGE_SIZE = 200;
++const TEXT_LIMIT = 256 * 1024;
++const IMAGE_LIMIT = 2 * 1024 * 1024;
++
++async function readDevices() {
++  if (process.platform !== 'linux') throw fail(501, 'Storage requiere un servidor Linux.');
++  const { stdout } = await exec('lsblk', ['--json', '--bytes', '--output', 'NAME,TYPE,SIZE,FSTYPE,LABEL,MODEL,MOUNTPOINTS'], { timeout: 5000, maxBuffer: 2 * 1024 * 1024 });
++  return JSON.parse(stdout).blockdevices;
++}
++function relativeParts(value) {
++  if (typeof value !== 'string' || value.length > 4096 || value.includes('\0') || value.includes('\\') || path.isAbsolute(value)) throw fail(400, 'Ruta no válida.');
++  const parts = value ? value.split('/') : [];
++  if (parts.some(part => !part || part === '.' || part === '..')) throw fail(400, 'Ruta no válida.');
++  return parts;
++}
++
++// Open each component relative to an anchored directory descriptor. No symlink
++// traversal, shell interpolation, or escapes into a different mounted device.
++async function withEntry(root, relative, directory, operation) {
++  const parts = relativeParts(relative);
++  let handle;
++  try {
++    handle = await fs.open(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
++    const rootDevice = (await handle.stat()).dev;
++    for (let i = 0; i < parts.length; i++) {
++      const flags = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK | (i < parts.length - 1 || directory ? constants.O_DIRECTORY : 0);
++      const next = await fs.open(`/proc/self/fd/${handle.fd}/${parts[i]}`, flags);
++      await handle.close(); handle = next;
++      if ((await handle.stat()).dev !== rootDevice) throw fail(403, 'Abre este volumen desde su propia entrada en Storage.');
++    }
++    const stat = await handle.stat();
++    if (directory ? !stat.isDirectory() : !stat.isFile()) throw fail(400, directory ? 'La ruta no es una carpeta.' : 'Solo se pueden abrir archivos regulares.');
++    return await operation(handle, stat);
++  } finally { if (handle) await handle.close(); }
++}
++
++function createStorageService({ roots = [], devices = readDevices } = {}) {
++  if (!Array.isArray(roots) || roots.some(root => typeof root !== 'string' || !path.isAbsolute(root))) throw new Error('La lista de raíces de Storage debe ser un array JSON de puntos de montaje absolutos.');
++  const allowed = new Set(roots.map(root => path.resolve(root)));
++  async function inventory() {
++    const disks = [];
++    const locations = new Map();
++    const blockdevices = await devices();
++    for (const disk of blockdevices.filter(device => device.type === 'disk')) {
++      const volumes = [];
++      const visited = new Set();
++      async function walk(device) {
++        const mounts = (Array.isArray(device.mountpoints) ? device.mountpoints : [device.mountpoint]).filter(mount => typeof mount === 'string' && mount.startsWith('/'));
++        if (mounts.length || (!device.children?.length && device.type !== 'disk') || (!device.children?.length && device.fstype)) {
++          for (const mount of mounts.length ? mounts : [null]) {
++            const volumeId = id(`${device.name}:${mount ?? ''}`);
++            if (visited.has(volumeId)) continue;
++            visited.add(volumeId);
++            let totalBytes = Number(device.size) || 0, usedBytes = null, freeBytes = null;
++            let reason = mount ? 'Exploración no habilitada para este volumen.' : 'Volumen sin montar.';
++            let browsable = false;
++            if (mount) {
++              try {
++                const stats = await fs.statfs(mount);
++                totalBytes = stats.blocks * stats.bsize;
++                usedBytes = (stats.blocks - stats.bfree) * stats.bsize;
++                freeBytes = stats.bavail * stats.bsize;
++                // Do not allow a configured symlink to change the browsing root.
++                browsable = allowed.has(path.resolve(mount)) && await fs.realpath(mount) === path.resolve(mount);
++                if (browsable) locations.set(volumeId, mount);
++              } catch { reason = 'No se pudo consultar el volumen; comprueba que siga montado y sus permisos.'; }
++            }
++            volumes.push({ id: volumeId, name: device.label || device.name, mountPoint: mount, filesystem: device.fstype || null, totalBytes, usedBytes, freeBytes, browsable, ...(browsable ? {} : { unavailableReason: reason }) });
++          }
++        }
++        for (const child of device.children || []) await walk(child);
++      }
++      await walk(disk);
++      disks.push({ id: id(disk.name), name: disk.model?.trim() || disk.name, device: `/dev/${disk.name}`, model: disk.model?.trim() || '', sizeBytes: Number(disk.size) || 0, volumes });
++    }
++    return { disks, locations };
++  }
++  async function volumeRoot(volume) {
++    const { locations } = await inventory();
++    const root = locations.get(volume);
++    if (!root) throw fail(403, 'Volumen no autorizado o ya no está montado.');
++    return root;
++  }
++  return {
++    async disks() { return (await inventory()).disks; },
++    async directory(volume, relative = '', offset = 0) {
++      relativeParts(relative);
++      if (!Number.isSafeInteger(offset) || offset < 0) throw fail(400, 'Paginación no válida.');
++      const root = await volumeRoot(volume);
++      return withEntry(root, relative, true, async handle => {
++        const children = (await fs.readdir(`/proc/self/fd/${handle.fd}`, { withFileTypes: true })).sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name));
++        const entries = [];
++        for (const child of children.slice(offset, offset + PAGE_SIZE)) {
++          try {
++            const stats = await fs.lstat(`/proc/self/fd/${handle.fd}/${child.name}`);
++            entries.push({ name: child.name, path: [relative, child.name].filter(Boolean).join('/'), kind: stats.isSymbolicLink() ? 'symlink' : stats.isDirectory() ? 'directory' : stats.isFile() ? 'file' : 'other', sizeBytes: stats.isFile() ? stats.size : null, modifiedAt: stats.mtime.toISOString() });
++          } catch (error) { if (error.code !== 'ENOENT' && error.code !== 'EACCES') throw error; }
++        }
++        return { path: relative, entries, nextOffset: children.length > offset + PAGE_SIZE ? offset + PAGE_SIZE : null };
++      });
++    },
++    async file(volume, relative) {
++      relativeParts(relative);
++      const root = await volumeRoot(volume);
++      return withEntry(root, relative, false, async (handle, stat) => {
++        const metadata = { name: path.basename(relative), sizeBytes: stat.size, modifiedAt: stat.mtime.toISOString() };
++        const buffer = Buffer.alloc(Math.min(stat.size, IMAGE_LIMIT) + 1);
++        const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
++        const data = buffer.subarray(0, bytesRead);
++        const mimeType = data.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) ? 'image/png' : data[0] === 255 && data[1] === 216 && data[2] === 255 ? 'image/jpeg' : data.subarray(0, 4).toString() === 'RIFF' && data.subarray(8, 12).toString() === 'WEBP' ? 'image/webp' : null;
++        if (mimeType && stat.size <= IMAGE_LIMIT && bytesRead <= IMAGE_LIMIT) return { ...metadata, kind: 'image', mimeType, content: data.toString('base64') };
++        if (mimeType) return { ...metadata, kind: 'unsupported', message: 'La imagen supera el límite de vista previa de 2 MiB.' };
++        const sample = data.subarray(0, TEXT_LIMIT);
++        if (sample.includes(0)) return { ...metadata, kind: 'unsupported', message: 'Archivo binario: vista previa no disponible.' };
++        try {
++          const truncated = stat.size > TEXT_LIMIT;
++          const content = new TextDecoder('utf-8', { fatal: true }).decode(sample, { stream: truncated });
++          return { ...metadata, kind: 'text', content, truncated };
++        } catch { return { ...metadata, kind: 'unsupported', message: 'Este archivo no es texto UTF-8 ni una imagen compatible.' }; }
++      });
++    },
++  };
++}
++function storageError(error) {
++  if (error.status) return { status: error.status, error: error.message };
++  if (['EACCES', 'EPERM', 'ELOOP'].includes(error.code)) return { status: 403, error: 'No hay permiso para abrir esta ruta o es un enlace simbólico.' };
++  if (['ENOENT', 'ENOTDIR', 'ENODEV'].includes(error.code)) return { status: 404, error: 'La ruta o el disco ya no están disponibles.' };
++  return { status: 503, error: 'No se pudo consultar Storage en el servidor.' };
++}
++module.exports = { createStorageService, storageError };
+diff --git a/server/tests/storage-api.test.mjs b/server/tests/storage-api.test.mjs
+new file mode 100644
+index 0000000..141c81c
+--- /dev/null
++++ b/server/tests/storage-api.test.mjs
+@@ -0,0 +1,45 @@
++import assert from 'node:assert/strict';
++import fs from 'node:fs/promises';
++import os from 'node:os';
++import path from 'node:path';
++import test from 'node:test';
++import { buildApp } from '../index.js';
++import { loadConfig } from '../config.js';
++import { openDatabase } from '../database/database.js';
++import { signToken } from '../services/crypto.js';
++import { createStorageService } from '../services/storage.cjs';
++
++test('Storage uses approved mobile sessions and role permissions, audits reads and refuses writes', async t => {
++  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'agm-storage-api-'));
++  const mount = path.join(root, 'disk'); await fs.mkdir(mount);
++  await fs.writeFile(path.join(mount, 'hello.txt'), 'Contenido del disco real de prueba.');
++  const web = path.join(root, 'web');await fs.mkdir(web);await fs.writeFile(path.join(web, 'index.html'), '<title>Test</title>');
++  const config = loadConfig({ NODE_ENV: 'test', DATABASE_PATH: path.join(root, 'test.sqlite'), BACKUP_PATH: path.join(root, 'backups'), STATIC_ROOT: web, STATIC_SOURCE_PATH: web, BACKUP_ENABLED: 'false', SESSION_SECRET: 'test-session-secret-that-is-long-enough', PASSWORD_PEPPER: 'test-pepper-that-is-long-enough', MOBILE_ACCESS_TOKEN_SECRET: 'test-access-secret-that-is-long-enough', MOBILE_REFRESH_TOKEN_SECRET: 'test-refresh-secret-that-is-long-enough' });
++  const storage = createStorageService({ roots: [mount], devices: async () => [{ name: 'sda', model: 'Integration disk', type: 'disk', size: 4096, children: [{ name: 'sda1', type: 'part', mountpoints: [mount], fstype: 'ext4', size: 4096 }] }] });
++  const db = openDatabase(config.databasePath); const app = await buildApp({ config, db, storage });
++  t.after(async () => { await app.close(); db.close(); await fs.rm(root, { recursive: true, force: true }); });
++  const token = (role, status = 'approved') => {
++    const user = Number(db.prepare('INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)').run(`${role}-${status}@test.invalid`, 'unused', role).lastInsertRowid);
++    const session = `${role}-${status}`;
++    db.prepare('INSERT INTO mobile_sessions (id, user_id, device_id_hash, device_name, status, ip_hash, user_agent_hash) VALUES (?, ?, ?, ?, ?, ?, ?)').run(session, user, 'testhash', 'Test phone', status, 'testhash', 'testhash');
++    return signToken({ typ: 'mobile-access', sub: user, sid: session, exp: Math.floor(Date.now() / 1000) + 600 }, config.mobileAccessTokenSecret);
++  };
++  const admin = token('admin'); const owner = token('owner'); const member = token('member'); const pending = token('admin', 'pending');
++  const get = (url, access) => app.inject({ method: 'GET', url, headers: access ? { authorization: `Bearer ${access}` } : {} });
++  const endpoint = '/api/mobile/storage/disks';
++  assert.equal((await get(endpoint)).statusCode, 401);
++  assert.equal((await get(endpoint, member)).statusCode, 403);
++  assert.equal((await get(endpoint, pending)).statusCode, 403);
++  assert.equal((await get(endpoint, owner)).statusCode, 200);
++  const response = await get(endpoint, admin); assert.equal(response.statusCode, 200);
++  const volume = response.json()[0].volumes[0].id;
++  const dir = await get(`/api/mobile/storage/directory?volume=${volume}`, admin);
++  assert.equal(dir.statusCode, 200);assert.equal(dir.json().entries[0].name, 'hello.txt');
++  const file = await get(`/api/mobile/storage/file?volume=${volume}&path=hello.txt`, admin);
++  assert.equal(file.statusCode, 200);assert.equal(file.json().content, 'Contenido del disco real de prueba.');
++  assert.equal(db.prepare("SELECT count(*) AS n FROM audit_events WHERE action = 'storage_file_read' AND result = 'success'").get().n, 1);
++  const escape = await get(`/api/mobile/storage/file?volume=${volume}&path=..%2Fsecret`, admin);assert.equal(escape.statusCode, 400);
++  const write = await app.inject({ method: 'POST', url: '/api/mobile/storage/file', headers: { authorization: `Bearer ${admin}` } });assert.equal(write.statusCode, 404);
++  db.prepare("UPDATE mobile_sessions SET status = 'revoked' WHERE id = 'admin-approved'").run();
++  assert.equal((await get(endpoint, admin)).statusCode, 403);
++});
+diff --git a/server/tests/storage.test.mjs b/server/tests/storage.test.mjs
+new file mode 100644
+index 0000000..19574e2
+--- /dev/null
++++ b/server/tests/storage.test.mjs
+@@ -0,0 +1,77 @@
++import { createRequire } from "node:module";
++const require = createRequire(import.meta.url);
++const { test } = require('node:test');
++const assert = require('node:assert/strict');
++const fs = require('node:fs/promises');
++const os = require('node:os');
++const path = require('node:path');
++const { createStorageService, storageError } = require('../services/storage.cjs');
++
++async function fixture(t) {
++  const base = await fs.mkdtemp(path.join(os.tmpdir(), 'agm-storage-'));
++  t.after(() => fs.rm(base, { recursive: true, force: true }));
++  const root = path.join(base, 'disk'); await fs.mkdir(root);
++  await fs.mkdir(path.join(root, 'docs'));
++  await fs.writeFile(path.join(root, 'docs', 'notes.txt'), 'Hola desde la RPi.');
++  await fs.writeFile(path.join(base, 'outside.txt'), 'not shared');
++  const devices = async () => [
++    { name: 'sda', type: 'disk', size: 4096, model: 'Test SSD', children: [{ name: 'sda1', type: 'part', size: 4096, fstype: 'ext4', mountpoints: [root] }] },
++    { name: 'sdb', type: 'disk', size: 8192, children: [{ name: 'sdb1', type: 'part', size: 8192, fstype: 'exfat', mountpoints: [null] }] },
++  ];
++  const service = createStorageService({ roots: [root], devices });
++  const disks = await service.disks();
++  return { base, root, service, devices, disks, volume: disks[0].volumes[0].id };
++}
++test('independent disks, actual statfs sizes and unmounted volumes', async t => {
++  const { root, disks } = await fixture(t);
++  assert.equal(disks.length, 2);
++  const stats = await fs.statfs(root);
++  assert.equal(disks[0].volumes[0].totalBytes, stats.blocks * stats.bsize);
++  assert.equal(disks[0].volumes[0].browsable, true);
++  assert.equal(disks[1].volumes[0].browsable, false);
++  assert.equal(disks[1].volumes[0].usedBytes, null);
++});
++test('listing and preview read files, no implicit access without an allowlist', async t => {
++  const { service, volume, devices } = await fixture(t);
++  const directory = await service.directory(volume);
++  assert.equal(directory.entries[0].kind, 'directory');
++  assert.equal(directory.entries[0].path, 'docs');
++  assert.equal((await service.file(volume, 'docs/notes.txt')).content, 'Hola desde la RPi.');
++  const locked = createStorageService({ devices });
++  assert.equal((await locked.disks())[0].volumes[0].browsable, false);
++  await assert.rejects(locked.directory(volume), { status: 403 });
++});
++test('reject traversal, absolute paths, symlink files and symlink parents', async t => {
++  const { root, base, service, volume } = await fixture(t);
++  for (const name of ['../outside.txt', '/etc/passwd', 'docs/../../outside.txt', 'docs/./notes.txt', 'docs\\notes.txt', 'bad\0path']) {
++    await assert.rejects(service.file(volume, name), { status: 400 });
++  }
++  await fs.symlink(path.join(base, 'outside.txt'), path.join(root, 'link'));
++  await fs.symlink(base, path.join(root, 'linked-directory'));
++  await assert.rejects(service.file(volume, 'link'));
++  await assert.rejects(service.file(volume, 'linked-directory/outside.txt'));
++  const directory = await service.directory(volume);
++  assert.equal(directory.entries.find(entry => entry.name === 'link').kind, 'symlink');
++});
++test('bounded previews distinguish UTF-8, binary files and images', async t => {
++  const { root, service, volume } = await fixture(t);
++  await fs.writeFile(path.join(root, 'large.txt'), 'é'.repeat(200000));
++  const text = await service.file(volume, 'large.txt');
++  assert.equal(text.kind, 'text');assert.equal(text.truncated, true);assert.ok(Buffer.byteLength(text.content) <= 256 * 1024);
++  await fs.writeFile(path.join(root, 'binary'), Buffer.from([0, 255, 0, 1]));
++  assert.equal((await service.file(volume, 'binary')).kind, 'unsupported');
++  await fs.writeFile(path.join(root, 'image.png'), Buffer.from([137,80,78,71,13,10,26,10]));
++  assert.equal((await service.file(volume, 'image.png')).mimeType, 'image/png');
++});
++test('pagination returns later files without repeating the first page', async t => {
++  const { root, service, volume } = await fixture(t);
++  await Promise.all(Array.from({ length: 205 }, (_, index) => fs.writeFile(path.join(root, `file-${index}`), 'test')));
++  const first = await service.directory(volume); const second = await service.directory(volume, '', first.nextOffset);
++  assert.equal(first.entries.length, 200); assert.equal(second.entries.length, 6); assert.equal(second.nextOffset, null);
++  assert.equal(new Set([...first.entries, ...second.entries].map(entry => entry.path)).size, 206);
++  await assert.rejects(service.directory(volume, '', -1), { status: 400 });
++});
++test('server errors do not disclose underlying filesystem paths', () => {
++  assert.equal(storageError({ code: 'ENOENT', message: '/private/secret' }).status, 404);
++  assert.equal(storageError({ message: '/private/secret' }).error.includes('/private'), false);
++});

@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "AGM Server Monitoring Desktop",
+    "slug": "agm-monitor-desktop",
+    "version": "1.0.0",
+    "userInterfaceStyle": "dark",
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/agm-server-monitoring-icon.png"
+    },
+    "plugins": [
+      "expo-asset",
+      "expo-font"
+    ]
+  }
+}
